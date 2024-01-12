@@ -15,6 +15,9 @@ import xyz.mattring.crystan.msgbus.Subscriber;
  * <p>
  * The server core is implemented using a disruptor, which allows for asynchronous processing
  * of requests and responses.
+ * <p>
+ * I recommend that both the request and response messages implement the TrackedJob interface,
+ * which allows for correlation of requests and responses. But do what you want.
  *
  * @param <T> the type of the request message
  * @param <U> the type of the response message
@@ -58,6 +61,9 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
             if (sub != null) {
                 sub.unsubscribe();
             }
+            if (disruptor != null) {
+                disruptor.shutdown();
+            }
         }
     }
 
@@ -97,6 +103,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
 
     /**
      * Handles a request event from the internal disruptor.
+     *
      * @param event
      * @param sequence
      * @param endOfBatch
@@ -107,7 +114,23 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
             return;
         }
         U responseMsg = prepareResponse(requestMsg);
+        propagateJobId(requestMsg, responseMsg);
         processResponseAsync(responseMsg);
+    }
+
+    /**
+     * Propagates the job ID from the request message to the response message,
+     * if both messages implement the TrackedJob interface.
+     *
+     * @param requestMsg  the request message
+     * @param responseMsg the response message
+     */
+    void propagateJobId(T requestMsg, U responseMsg) {
+        if (requestMsg instanceof TrackedJob && responseMsg instanceof TrackedJob) {
+            TrackedJob reqTj = (TrackedJob) requestMsg;
+            TrackedJob respTj = (TrackedJob) responseMsg;
+            respTj.setJobId(reqTj.getJobId());
+        }
     }
 
     /**
@@ -121,6 +144,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
 
     /**
      * Handles a response event from the internal disruptor.
+     *
      * @param event
      * @param sequence
      * @param endOfBatch
