@@ -9,6 +9,10 @@ public class JobIdGenerator {
     private long todayJobCount;
 
     public JobIdGenerator(String prefix) {
+        final boolean validPrefix = isValidPrefix(prefix);
+        if (!validPrefix) {
+            throw new IllegalArgumentException("prefix must be non-null, non-empty, and contain only ASCII characters");
+        }
         this.prefix = prefix;
         this.todayYYYYMMDD = calcTodayYYYYMMDD();
         todayJobCount = 1L;
@@ -16,6 +20,12 @@ public class JobIdGenerator {
         scheduler.scheduleAtFixedRate(
                 this::checkIfNewDay, 2, 2, java.util.concurrent.TimeUnit.MINUTES);
         Runtime.getRuntime().addShutdownHook(new Thread(scheduler::shutdown));
+    }
+
+    static boolean isValidPrefix(String prefix) {
+        return prefix != null
+                && !prefix.trim().isEmpty()
+                && prefix.chars().allMatch(c -> c < 128);
     }
 
     private int calcTodayYYYYMMDD() {
