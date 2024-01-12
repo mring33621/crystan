@@ -17,12 +17,10 @@ public class TrackedMsg<T> {
         return msg;
     }
 
-    @Override
     public String getJobId() {
         return jobId;
     }
 
-    @Override
     public void setJobId(String jobId) {
         this.jobId = jobId;
     }
