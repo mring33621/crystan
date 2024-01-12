@@ -16,21 +16,22 @@ import xyz.mattring.crystan.msgbus.Subscriber;
  * The server core is implemented using a disruptor, which allows for asynchronous processing
  * of requests and responses.
  * <p>
- * I recommend that both the request and response messages implement the TrackedJob interface,
- * which allows for correlation of requests and responses. But do what you want.
+ * String jobIds are propagated from request to response to help the client correlate requests with responses.
  *
  * @param <T> the type of the request message
  * @param <U> the type of the response message
  */
-public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, Publisher<U>, Runnable {
+public abstract class ServerCore<T, U> implements BusConnector, Subscriber<TrackedMsg<T>>, Publisher<TrackedMsg<U>>, Runnable {
 
     static class ReqRespEvent<T, U> {
         T req;
         U resp;
+        String jobId;
 
         void clear() {
             req = null;
             resp = null;
+            jobId = null;
         }
     }
 
@@ -73,7 +74,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
      * @param requestMsgBytes the byte array to deserialize
      * @return the deserialized request message
      */
-    abstract T deserializeRequest(byte[] requestMsgBytes);
+    abstract TrackedMsg<T> deserializeRequest(byte[] requestMsgBytes);
 
     /**
      * Do your business work here:
@@ -90,15 +91,18 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
      * @param responseMsg the response message to serialize
      * @return the serialized response message
      */
-    abstract byte[] serializeResponse(U responseMsg);
+    abstract byte[] serializeResponse(TrackedMsg<U> responseMsg);
 
     /**
      * Publishes a request message to the internal disruptor.
      *
      * @param requestMsg the request message to publish
      */
-    void processRequestAsync(T requestMsg) {
-        disruptor.publishEvent((event, sequence) -> event.req = requestMsg);
+    void processRequestAsync(TrackedMsg<T> requestMsg) {
+        disruptor.publishEvent((event, sequence) -> {
+            event.req = requestMsg.getMsg();
+            event.jobId = requestMsg.getJobId();
+        });
     }
 
     /**
@@ -114,32 +118,20 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
             return;
         }
         U responseMsg = prepareResponse(requestMsg);
-        propagateJobId(requestMsg, responseMsg);
-        processResponseAsync(responseMsg);
-    }
-
-    /**
-     * Propagates the job ID from the request message to the response message,
-     * if both messages implement the TrackedJob interface.
-     *
-     * @param requestMsg  the request message
-     * @param responseMsg the response message
-     */
-    void propagateJobId(T requestMsg, U responseMsg) {
-        if (requestMsg instanceof TrackedJob && responseMsg instanceof TrackedJob) {
-            TrackedJob reqTj = (TrackedJob) requestMsg;
-            TrackedJob respTj = (TrackedJob) responseMsg;
-            respTj.setJobId(reqTj.getJobId());
-        }
+        processResponseAsync(responseMsg, event.jobId);
     }
 
     /**
      * Publishes a response message to the internal disruptor.
      *
      * @param responseMsg the response message to publish
+     * @param jobId       the job ID to correlate the response with
      */
-    void processResponseAsync(U responseMsg) {
-        disruptor.publishEvent((event, sequence) -> event.resp = responseMsg);
+    void processResponseAsync(U responseMsg, String jobId) {
+        disruptor.publishEvent((event, sequence) -> {
+            event.resp = responseMsg;
+            event.jobId = jobId;
+        });
     }
 
     /**
@@ -154,7 +146,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
         if (responseMsg == null) {
             return;
         }
-        publishResponse(responseMsg);
+        publishResponse(responseMsg, event.jobId);
     }
 
     /**
@@ -162,8 +154,8 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<T>, P
      *
      * @param responseMsg the response message to publish
      */
-    void publishResponse(U responseMsg) {
-        publish(responseMsg, this::serializeResponse, publishSubject, getConnection());
+    void publishResponse(U responseMsg, String jobId) {
+        publish(new TrackedMsg<>(responseMsg, jobId), this::serializeResponse, publishSubject, getConnection());
     }
 
     /**
