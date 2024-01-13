@@ -75,6 +75,10 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
         }
     }
 
+    public void stop() {
+        running = false;
+    }
+
     /**
      * Deserializes a request message from a byte array.
      *
