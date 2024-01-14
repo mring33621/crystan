@@ -89,7 +89,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
         Tuple2<String, byte[]> jobIdAndPayload = JobIdSerdeHelper.splitJobIdAndPayload(trackedRequestMsgBytes);
         String jobId = jobIdAndPayload._1();
         T requestMsg = reqMsgDeserializer.apply(jobIdAndPayload._2());
-        return new TrackedMsg<>(requestMsg, jobId);
+        return new TrackedMsg<>(jobId, requestMsg);
     }
 
     /**
@@ -117,7 +117,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
             return;
         }
         U responseMsg = prepareResponse(requestMsg);
-        processTrackedResponseAsync(new TrackedMsg<>(responseMsg, event.jobId));
+        processTrackedResponseAsync(new TrackedMsg<>(event.jobId, responseMsg));
     }
 
     /**
@@ -144,7 +144,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
         if (responseMsg == null) {
             return;
         }
-        publishResponse(new TrackedMsg<>(responseMsg, event.jobId));
+        publishResponse(new TrackedMsg<>(event.jobId, responseMsg));
     }
 
     /**

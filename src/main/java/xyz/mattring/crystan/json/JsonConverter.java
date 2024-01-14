@@ -1,5 +1,6 @@
 package xyz.mattring.crystan.json;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.ObjectWriter;
@@ -26,16 +27,16 @@ public interface JsonConverter {
     default <T> T fromJson(String json, Class<T> clazz) {
         try {
             return getObjectReader(clazz).readValue(json);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (JsonProcessingException jpex) {
+            throw new RuntimeException(jpex);
         }
     }
 
     default String toJson(Object obj) {
         try {
             return getObjectWriter().writeValueAsString(obj);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (JsonProcessingException jpex) {
+            throw new RuntimeException(jpex);
         }
     }
 
