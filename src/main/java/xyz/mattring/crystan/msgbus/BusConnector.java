@@ -14,7 +14,7 @@ public interface BusConnector {
     }
 
     default Connection getConnection() {
-        final String cacheKey = "conn_" + this.hashCode();
+        final String cacheKey = "conn_" + System.identityHashCode(this);
         return (Connection) PartsCache.computeIfAbsent(cacheKey, key -> {
             try {
                 return Nats.connect(getOptions());

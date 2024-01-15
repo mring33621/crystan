@@ -9,17 +9,19 @@ import xyz.mattring.crystan.cache.PartsCache;
 public interface JsonConverter {
 
     default ObjectMapper getObjectMapper() {
-        return new ObjectMapper();
+        final String cacheKey = "mapper_" + System.identityHashCode(this);
+        return (ObjectMapper) PartsCache.computeIfAbsent(
+                cacheKey, key -> new ObjectMapper());
     }
 
     default <T> ObjectReader getObjectReader(Class<T> clazz) {
-        final String cacheKey = "reader_" + this.hashCode();
+        final String cacheKey = "reader_" + System.identityHashCode(this);
         return (ObjectReader) PartsCache.computeIfAbsent(
                 cacheKey, key -> getObjectMapper().readerFor(clazz));
     }
 
     default ObjectWriter getObjectWriter() {
-        final String cacheKey = "writer_" + this.hashCode();
+        final String cacheKey = "writer_" + System.identityHashCode(this);
         return (ObjectWriter) PartsCache.computeIfAbsent(
                 cacheKey, key -> getObjectMapper().writer().withDefaultPrettyPrinter());
     }

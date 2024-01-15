@@ -3,6 +3,9 @@ package xyz.mattring.crystan.cache;
 import java.util.Map;
 import java.util.function.Function;
 
+/**
+ * Very simple cache for things like Nats connections, Jackson mappers, etc.
+ */
 public class PartsCache {
     private static final Map<String, Object> cache = new java.util.concurrent.ConcurrentHashMap<>();
 
