@@ -2,6 +2,7 @@ package xyz.mattring.crystan.service;
 
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.util.DaemonThreadFactory;
+import io.nats.client.Dispatcher;
 import io.nats.client.Subscription;
 import xyz.mattring.crystan.msgbus.BusConnector;
 import xyz.mattring.crystan.msgbus.Publisher;
@@ -57,17 +58,17 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
 
     @Override
     public void run() {
-        Subscription sub = null;
+        Tuple2<Dispatcher, Subscription> subParts = null;
         try {
             running = true;
-            sub = subscribe(this::processTrackedRequestAsync, this::deserializeTrackedRequest, subscribeSubject, getConnection());
+            subParts = subscribe(this::processTrackedRequestAsync, this::deserializeTrackedRequest, subscribeSubject, getConnection());
             while (running) {
                 performSideWork();
             }
         } finally {
             running = false;
-            if (sub != null) {
-                sub.unsubscribe();
+            if (subParts != null) {
+                subParts._1().unsubscribe(subParts._2());
             }
             if (disruptor != null) {
                 disruptor.shutdown();

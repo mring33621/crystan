@@ -1,5 +1,6 @@
 package xyz.mattring.crystan.service;
 
+import io.nats.client.Dispatcher;
 import io.nats.client.Subscription;
 import xyz.mattring.crystan.msgbus.BusConnector;
 import xyz.mattring.crystan.msgbus.Publisher;
@@ -36,10 +37,10 @@ public class ClientCore<T, U> implements BusConnector, Publisher<TrackedMsg<T>>,
 
     @Override
     public void run() {
-        Subscription sub = null;
+        Tuple2<Dispatcher, Subscription> subParts = null;
         try {
             running = true;
-            sub = subscribe(
+            subParts = subscribe(
                     this::processTrackedResponse,
                     this::deserializeTrackedResponse,
                     subscribeSubject,
@@ -49,8 +50,8 @@ public class ClientCore<T, U> implements BusConnector, Publisher<TrackedMsg<T>>,
             }
         } finally {
             running = false;
-            if (sub != null) {
-                sub.unsubscribe();
+            if (subParts != null) {
+                subParts._1().unsubscribe(subParts._2());
             }
         }
     }

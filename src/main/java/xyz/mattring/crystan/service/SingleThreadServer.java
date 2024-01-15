@@ -1,5 +1,6 @@
 package xyz.mattring.crystan.service;
 
+import io.nats.client.Dispatcher;
 import io.nats.client.Subscription;
 import xyz.mattring.crystan.json.JsonConverter;
 import xyz.mattring.crystan.msgbus.BusConnector;
@@ -46,7 +47,7 @@ public class SingleThreadServer<A, B> implements BusConnector, Subscriber<Tracke
     @Override
     public void run() {
         running = true;
-        Subscription sub = subscribe(
+        Tuple2<Dispatcher, Subscription> subParts = subscribe(
                 this::enqueueRequest,
                 this::deserializeRequest,
                 subjectA,
@@ -58,7 +59,7 @@ public class SingleThreadServer<A, B> implements BusConnector, Subscriber<Tracke
                 sendResponse(resp);
             }
         }
-        sub.unsubscribe();
+        subParts._1().unsubscribe(subParts._2());
     }
 
     public void stop() {
