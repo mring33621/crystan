@@ -51,17 +51,21 @@ public class ClientCoreSingleThreadServerIT extends NatsTestBase {
                 },
                 bytes -> { // byte[] to Bar
                     Bar resp = jsonConverter.fromJson(BytesConverter.bytesToUtf8(bytes), Bar.class);
-                    System.out.println("client received " + resp);
-                    recvdMsgLatch.countDown();
-                    assertEquals(testBar, resp);
+                    System.out.println("client deserialized response " + resp);
                     return resp;
                 });
         Thread clientCoreThread = new Thread(clientCore);
         clientCoreThread.start();
+        clientCore.sendRequest(testFoo, bar -> {
+            System.out.println("client processed response " + bar);
+            recvdMsgLatch.countDown();
+            assertEquals(testBar, bar);
+        });
 
         boolean recvdMsg = recvdMsgLatch.await(10, java.util.concurrent.TimeUnit.SECONDS);
         clientCore.stop();
         server.stop();
+        assertEquals(0, clientCore.getNumHandlers(), "clientCore.getNumHandlers() != 0");
         assertTrue(recvdMsg, "recvdMsgLatch.await() timed out");
     }
 

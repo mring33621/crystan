@@ -13,22 +13,22 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public class ClientCore<T, U> implements BusConnector, Publisher<TrackedMsg<T>>, Subscriber<TrackedMsg<U>>, Runnable {
+public class ClientCore<A, B> implements BusConnector, Publisher<TrackedMsg<A>>, Subscriber<TrackedMsg<B>>, Runnable {
 
-    final String publishSubject;
-    final String subscribeSubject;
-    final Function<T, byte[]> reqMsgSerializer;
-    final Function<byte[], U> respMsgDeserializer;
-    final Map<String, Consumer<U>> registeredRespHandlers;
+    final String sendReqSubject;
+    final String rcvRespSubject;
+    final Function<A, byte[]> reqMsgSerializer;
+    final Function<byte[], B> respMsgDeserializer;
+    final Map<String, Consumer<B>> registeredRespHandlers;
     final JobIdGenerator jobIdGenerator;
     boolean running = false;
 
-    public ClientCore(String publishSubject, String subscribeSubject, Function<T, byte[]> reqMsgSerializer, Function<byte[], U> respMsgDeserializer) {
-        this.publishSubject = publishSubject;
-        this.subscribeSubject = subscribeSubject;
+    public ClientCore(String sendReqSubject, String rcvRespSubject, Function<A, byte[]> reqMsgSerializer, Function<byte[], B> respMsgDeserializer) {
+        this.sendReqSubject = sendReqSubject;
+        this.rcvRespSubject = rcvRespSubject;
         this.reqMsgSerializer = reqMsgSerializer;
         this.respMsgDeserializer = respMsgDeserializer;
-        this.registeredRespHandlers = new ConcurrentHashMap<>(); // TODO: expire old handlers that didn't get a response
+        this.registeredRespHandlers = new ConcurrentHashMap<>(); // TODO: expire handlers that never got a response?
         // TODO: make clientId configurable
         final String clientId =
                 this.getClass().getSimpleName() + "-" + ThreadLocalRandom.current().nextInt(1000);
@@ -43,7 +43,7 @@ public class ClientCore<T, U> implements BusConnector, Publisher<TrackedMsg<T>>,
             subParts = subscribe(
                     this::processTrackedResponse,
                     this::deserializeTrackedResponse,
-                    subscribeSubject,
+                    rcvRespSubject,
                     getConnection());
             while (running) {
                 performSideWork();
@@ -60,37 +60,37 @@ public class ClientCore<T, U> implements BusConnector, Publisher<TrackedMsg<T>>,
         running = false;
     }
 
-    TrackedMsg<U> deserializeTrackedResponse(byte[] trackedResponseMsgBytes) {
-        TrackedMsg<U> trackedResponseMsg = null;
+    TrackedMsg<B> deserializeTrackedResponse(byte[] trackedResponseMsgBytes) {
+        TrackedMsg<B> trackedResponseMsg = null;
         final String jobId = JobIdSerdeHelper.findJobId(trackedResponseMsgBytes);
         if (jobId != null && registeredRespHandlers.containsKey(jobId)) {
             // TODO: consider optimizing this by not deserializing the response if there is no handler for the jobId
             // TODO: consider optimizing this by not extracting the jobId twice
             final Tuple2<String, byte[]> jobIdAndPayload = JobIdSerdeHelper.splitJobIdAndPayload(trackedResponseMsgBytes);
-            final U requestMsg = respMsgDeserializer.apply(jobIdAndPayload._2());
+            final B requestMsg = respMsgDeserializer.apply(jobIdAndPayload._2());
             trackedResponseMsg = new TrackedMsg<>(jobId, requestMsg);
         }
         return trackedResponseMsg;
     }
 
-    void processTrackedResponse(TrackedMsg<U> trackedResponseMsg) {
+    void processTrackedResponse(TrackedMsg<B> trackedResponseMsg) {
         if (trackedResponseMsg != null) {
             final String jobId = trackedResponseMsg.getJobId();
-            final Consumer<U> respHandler = registeredRespHandlers.remove(jobId);
+            final Consumer<B> respHandler = registeredRespHandlers.remove(jobId);
             if (respHandler != null) {
                 respHandler.accept(trackedResponseMsg.getMsg());
             }
         }
     }
 
-    public void sendRequest(T req, Consumer<U> respHandler) {
+    public void sendRequest(A req, Consumer<B> respHandler) {
         final String jobId = jobIdGenerator.nextJobId();
         registeredRespHandlers.put(jobId, respHandler);
-        final TrackedMsg<T> trackedRequestMsg = new TrackedMsg<>(jobId, req);
-        publish(trackedRequestMsg, this::serializeTrackedRequest, publishSubject, getConnection());
+        final TrackedMsg<A> trackedRequestMsg = new TrackedMsg<>(jobId, req);
+        publish(trackedRequestMsg, this::serializeTrackedRequest, sendReqSubject, getConnection());
     }
 
-    byte[] serializeTrackedRequest(TrackedMsg<T> trackedRequestMsg) {
+    byte[] serializeTrackedRequest(TrackedMsg<A> trackedRequestMsg) {
         return JobIdSerdeHelper.prependPayloadWithJobId(
                 trackedRequestMsg.getJobId(), reqMsgSerializer.apply(trackedRequestMsg.getMsg()));
     }
@@ -102,5 +102,13 @@ public class ClientCore<T, U> implements BusConnector, Publisher<TrackedMsg<T>>,
     void performSideWork() {
         // use you imagination...
         // TODO: make this a pluggable Runnable instead?
+    }
+
+    /**
+     * Returns the number of registered response handlers.
+     * @return num int
+     */
+    public int getNumHandlers() {
+        return registeredRespHandlers.size();
     }
 }
