@@ -15,7 +15,7 @@ public interface JsonConverter {
     }
 
     default <T> ObjectReader getObjectReader(Class<T> clazz) {
-        final String cacheKey = "reader_" + System.identityHashCode(this);
+        final String cacheKey = clazz.getSimpleName() + "_reader_" + System.identityHashCode(this);
         return (ObjectReader) PartsCache.computeIfAbsent(
                 cacheKey, key -> getObjectMapper().readerFor(clazz));
     }

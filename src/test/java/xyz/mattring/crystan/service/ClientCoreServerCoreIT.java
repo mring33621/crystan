@@ -10,7 +10,7 @@ import java.util.concurrent.CountDownLatch;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class ClientCoreSingleThreadServerIT extends NatsTestBase {
+public class ClientCoreServerCoreIT extends NatsTestBase {
 
     @Test
     public void testPubSub() throws IOException, InterruptedException {
@@ -22,15 +22,26 @@ public class ClientCoreSingleThreadServerIT extends NatsTestBase {
         final JsonConverter jsonConverter = new JsonConverter() {
         };
         final CountDownLatch recvdMsgLatch = new CountDownLatch(2); // server recv + client recv
-        SingleThreadServer<Foo, Bar> server = new SingleThreadServer<>(testSubjectA, testSubjectB, Foo.class, foo -> {
-            System.out.println("server received " + foo);
-            assertEquals(testFoo, foo);
-            Bar resp = new Bar(foo);
-            System.out.println("server sending " + resp);
-            assertEquals(testBar, resp);
-            recvdMsgLatch.countDown();
-            return resp;
-        });
+        ServerCore<Foo, Bar> server = new ServerCore<>(
+                testSubjectA,
+                testSubjectB,
+                msgBytes -> {
+                    Foo foo = jsonConverter.fromJson(BytesConverter.bytesToUtf8(msgBytes), Foo.class);
+                    System.out.println("server received request " + foo);
+                    recvdMsgLatch.countDown();
+                    assertEquals(testFoo, foo);
+                    return foo;
+                },
+                fooMsg -> {
+                    Bar resp = new Bar(fooMsg);
+                    System.out.println("server built " + resp);
+                    return resp;
+                },
+                barMsg -> {
+                    System.out.println("server sending " + barMsg);
+                    assertEquals(testBar, barMsg);
+                    return BytesConverter.utf8ToBytes(jsonConverter.toJson(barMsg));
+                });
 
         Thread serverThread = new Thread(server);
         serverThread.start();

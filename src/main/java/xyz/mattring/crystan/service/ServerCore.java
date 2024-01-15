@@ -22,10 +22,10 @@ import java.util.function.Function;
  * <p>
  * String jobIds are propagated from request to response to help the client correlate requests with responses.
  *
- * @param <T> the type of the request message
- * @param <U> the type of the response message
+ * @param <A> the type of the request message
+ * @param <B> the type of the response message
  */
-public abstract class ServerCore<T, U> implements BusConnector, Subscriber<TrackedMsg<T>>, Publisher<TrackedMsg<U>>, Runnable {
+public class ServerCore<A, B> implements BusConnector, Subscriber<TrackedMsg<A>>, Publisher<TrackedMsg<B>>, Runnable {
 
     static class ReqRespEvent<T, U> {
         T req;
@@ -39,17 +39,19 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
         }
     }
 
-    final String subscribeSubject;
-    final String publishSubject;
-    final Function<byte[], T> reqMsgDeserializer;
-    final Function<U, byte[]> respMsgSerializer;
-    final Disruptor<ReqRespEvent<T, U>> disruptor;
+    final String rcvReqSubject;
+    final String sendRespSubject;
+    final Function<byte[], A> reqMsgDeserializer;
+    final Function<A, B> businessLogic;
+    final Function<B, byte[]> respMsgSerializer;
+    final Disruptor<ReqRespEvent<A, B>> disruptor;
     boolean running = false;
 
-    public ServerCore(String subscribeSubject, String publishSubject, Function<byte[], T> reqMsgDeserializer, Function<U, byte[]> respMsgSerializer) {
-        this.subscribeSubject = subscribeSubject;
-        this.publishSubject = publishSubject;
+    public ServerCore(String rcvReqSubject, String sendRespSubject, Function<byte[], A> reqMsgDeserializer, Function<A, B> businessLogic, Function<B, byte[]> respMsgSerializer) {
+        this.rcvReqSubject = rcvReqSubject;
+        this.sendRespSubject = sendRespSubject;
         this.reqMsgDeserializer = reqMsgDeserializer;
+        this.businessLogic = businessLogic;
         this.respMsgSerializer = respMsgSerializer;
         final int ringSize = 1024; // TODO: make configurable (must be power of 2)
         disruptor = new Disruptor<>(ReqRespEvent::new, ringSize, DaemonThreadFactory.INSTANCE);
@@ -61,7 +63,8 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
         Tuple2<Dispatcher, Subscription> subParts = null;
         try {
             running = true;
-            subParts = subscribe(this::processTrackedRequestAsync, this::deserializeTrackedRequest, subscribeSubject, getConnection());
+            disruptor.start();
+            subParts = subscribe(this::processTrackedRequestAsync, this::deserializeTrackedRequest, rcvReqSubject, getConnection());
             while (running) {
                 performSideWork();
             }
@@ -86,10 +89,10 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
      * @param trackedRequestMsgBytes the serialized request message
      * @return the deserialized request message
      */
-    TrackedMsg<T> deserializeTrackedRequest(byte[] trackedRequestMsgBytes) {
+    TrackedMsg<A> deserializeTrackedRequest(byte[] trackedRequestMsgBytes) {
         Tuple2<String, byte[]> jobIdAndPayload = JobIdSerdeHelper.splitJobIdAndPayload(trackedRequestMsgBytes);
         String jobId = jobIdAndPayload._1();
-        T requestMsg = reqMsgDeserializer.apply(jobIdAndPayload._2());
+        A requestMsg = reqMsgDeserializer.apply(jobIdAndPayload._2());
         return new TrackedMsg<>(jobId, requestMsg);
     }
 
@@ -98,7 +101,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
      *
      * @param trackedRequestMsg the request message to publish
      */
-    void processTrackedRequestAsync(TrackedMsg<T> trackedRequestMsg) {
+    void processTrackedRequestAsync(TrackedMsg<A> trackedRequestMsg) {
         disruptor.publishEvent((event, sequence) -> {
             event.req = trackedRequestMsg.getMsg();
             event.jobId = trackedRequestMsg.getJobId();
@@ -112,12 +115,12 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
      * @param sequence
      * @param endOfBatch
      */
-    void handleRequestEvent(ReqRespEvent<T, U> event, long sequence, boolean endOfBatch) {
-        T requestMsg = event.req;
+    void handleRequestEvent(ReqRespEvent<A, B> event, long sequence, boolean endOfBatch) {
+        A requestMsg = event.req;
         if (requestMsg == null) {
             return;
         }
-        U responseMsg = prepareResponse(requestMsg);
+        B responseMsg = prepareResponse(requestMsg);
         processTrackedResponseAsync(new TrackedMsg<>(event.jobId, responseMsg));
     }
 
@@ -126,7 +129,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
      *
      * @param trackedResponseMsg the response message to publish
      */
-    void processTrackedResponseAsync(TrackedMsg<U> trackedResponseMsg) {
+    void processTrackedResponseAsync(TrackedMsg<B> trackedResponseMsg) {
         disruptor.publishEvent((event, sequence) -> {
             event.resp = trackedResponseMsg.getMsg();
             event.jobId = trackedResponseMsg.getJobId();
@@ -140,8 +143,8 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
      * @param sequence
      * @param endOfBatch
      */
-    void handleResponseEvent(ReqRespEvent<T, U> event, long sequence, boolean endOfBatch) {
-        U responseMsg = event.resp;
+    void handleResponseEvent(ReqRespEvent<A, B> event, long sequence, boolean endOfBatch) {
+        B responseMsg = event.resp;
         if (responseMsg == null) {
             return;
         }
@@ -149,13 +152,13 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
     }
 
     /**
-     * Do your business work here:
-     * Query a database, call a web service, etc.
-     *
-     * @param requestMsg the request message to prepare a response for
-     * @return the response message
+     * Runs the business logic to prepare a response message.
+     * @param requestMsg
+     * @return responseMsg
      */
-    abstract U prepareResponse(T requestMsg); // TODO: make a pluggable Function<T, U> instead?
+    B prepareResponse(A requestMsg) {
+        return businessLogic.apply(requestMsg);
+    }
 
     /**
      * Serializes a response message to a byte array.
@@ -163,7 +166,7 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
      * @param trackedResponseMsg the response message to serialize
      * @return the serialized response message
      */
-    byte[] serializeTrackedResponse(TrackedMsg<U> trackedResponseMsg) {
+    byte[] serializeTrackedResponse(TrackedMsg<B> trackedResponseMsg) {
         return JobIdSerdeHelper.prependPayloadWithJobId(trackedResponseMsg.getJobId(), respMsgSerializer.apply(trackedResponseMsg.getMsg()));
     }
 
@@ -172,8 +175,8 @@ public abstract class ServerCore<T, U> implements BusConnector, Subscriber<Track
      *
      * @param trackedResponseMsg the response message to publish
      */
-    void publishResponse(TrackedMsg<U> trackedResponseMsg) {
-        publish(trackedResponseMsg, this::serializeTrackedResponse, publishSubject, getConnection());
+    void publishResponse(TrackedMsg<B> trackedResponseMsg) {
+        publish(trackedResponseMsg, this::serializeTrackedResponse, sendRespSubject, getConnection());
     }
 
     /**
