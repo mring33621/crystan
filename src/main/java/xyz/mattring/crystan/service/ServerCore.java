@@ -3,6 +3,7 @@ package xyz.mattring.crystan.service;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.util.DaemonThreadFactory;
 import io.nats.client.Dispatcher;
+import io.nats.client.Options;
 import io.nats.client.Subscription;
 import xyz.mattring.crystan.msgbus.BusConnector;
 import xyz.mattring.crystan.msgbus.Publisher;
@@ -10,6 +11,7 @@ import xyz.mattring.crystan.msgbus.Subscriber;
 import xyz.mattring.crystan.util.Tuple2;
 
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * A base class for a Crystan server.
@@ -41,6 +43,7 @@ public class ServerCore<A, B> implements BusConnector, Subscriber<TrackedMsg<A>>
 
     final String rcvReqSubject;
     final String sendRespSubject;
+    Supplier<Options> optionsSupplier;
     final Function<byte[], A> reqMsgDeserializer;
     final Function<A, B> businessLogic;
     final Function<B, byte[]> respMsgSerializer;
@@ -50,12 +53,32 @@ public class ServerCore<A, B> implements BusConnector, Subscriber<TrackedMsg<A>>
     public ServerCore(String rcvReqSubject, String sendRespSubject, Function<byte[], A> reqMsgDeserializer, Function<A, B> businessLogic, Function<B, byte[]> respMsgSerializer) {
         this.rcvReqSubject = rcvReqSubject;
         this.sendRespSubject = sendRespSubject;
+        this.optionsSupplier = BusConnector.super::getOptions;
         this.reqMsgDeserializer = reqMsgDeserializer;
         this.businessLogic = businessLogic;
         this.respMsgSerializer = respMsgSerializer;
         final int ringSize = 1024; // TODO: make configurable (must be power of 2)
         disruptor = new Disruptor<>(ReqRespEvent::new, ringSize, DaemonThreadFactory.INSTANCE);
         disruptor.handleEventsWith(this::handleRequestEvent, this::handleResponseEvent).then((event, sequence, endOfBatch) -> event.clear());
+    }
+
+    /**
+     * Sets the options supplier for the NATS connection.
+     * Use this feature to override the default NATS Connections options.
+     * <p>
+     * This method must be called BEFORE the server is started.
+     *
+     * @param optionsSupplier the options supplier
+     */
+    public void setOptionsSupplier(Supplier<Options> optionsSupplier) {
+        if (!running) {
+            this.optionsSupplier = optionsSupplier;
+        }
+    }
+
+    @Override
+    public Options getOptions() {
+        return optionsSupplier.get();
     }
 
     @Override

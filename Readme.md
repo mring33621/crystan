@@ -4,6 +4,7 @@
 2. I've been enjoying Java interface default methods, so I'm (over)using them here.
 3. I already have a converter for JSON message formats, but may soon add support for [Fury](https://fury.apache.org/), too.
 4. I'm using Java 21, but *Crystan* will probably work with Java 8.
+5. Crystan has 85% test coverage, with the automated unit and integration tests.
 
 ## High Level Usage
 1. Servers: Choose from SingleThreadServer or ServerCore (uses LMAX Disruptor).
@@ -19,8 +20,9 @@
 5. You will need to provide functions to convert between your message objects and the NATS byte[] payloads.
 
 ## TODO:
-1. High-level level parts need better NATS configuration than overriding the *getOptions* method.
-2. What to really do with high-level server performSideWork() method?
-3. Add support for [Fury](https://fury.apache.org/) or other message formats.
+1. High-level level parts should support a file-based NATS connection configuration.
+2. What to do with high-level server performSideWork() method?
+3. Fix integration tests to run under Linux. Currently, they only run under Windows.
+4. Add support for [Fury](https://fury.apache.org/) or other message formats.
 
 License: [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0.txt)
