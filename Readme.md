@@ -7,7 +7,7 @@
 5. Crystan has 85% test coverage, with the automated unit and integration tests.
 
 ## High Level Usage
-1. Servers: Choose from SingleThreadServer or ServerCore (uses LMAX Disruptor).
+1. Servers: Choose from SingleThreadServer or ServerCore (uses [LMAX Disruptor](https://lmax-exchange.github.io/disruptor/)).
 2. Clients: ClientCore
 3. The high-level clients and servers pass around a 'jobId' to correlate request and response messages.
 4. See the Integration Tests (*.IT.java) for examples of usage.
